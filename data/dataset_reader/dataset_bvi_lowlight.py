@@ -13,7 +13,7 @@ except:
 
 
 def _list_frames(folder):
-    frames = [f for f in os.listdir(folder) if f.lower().endswith('.png')]
+    frames = [f for f in os.listdir(folder) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
     return sorted(frames)
 
 
@@ -47,6 +47,8 @@ def _build_windows(low_dir, high_dir, temporal_window=3, frame_stride=1):
 def _split_scenes(root_path, seed=2025, train_ratio=0.8):
     scenes = [d for d in os.listdir(root_path) if d.startswith('S') and os.path.isdir(os.path.join(root_path, d))]
     scenes = sorted(scenes)
+    if not scenes:
+        raise ValueError(f'No BVI-Lowlight scenes found under: {root_path}')
     random.seed(seed)
     random.shuffle(scenes)
     split_index = int(len(scenes) * train_ratio)

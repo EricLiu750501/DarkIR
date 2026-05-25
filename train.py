@@ -68,10 +68,14 @@ def build_train_loader(opt, rank, world_size):
 
         if temporal_window > 1:
             windows_low, centers_high = _collect_windows(root_path, train_scenes, temporal_window=temporal_window, frame_stride=frame_stride)
+            if len(windows_low) == 0:
+                raise ValueError(f'No temporal windows found under {root_path}. Check dataset structure and extensions.')
             train_dataset = TemporalWindowDataset(windows_low, centers_high, cropsize=cropsize,
                                                   tensor_transform=tensor_transform, flips=flips, test=False, crop_type=crop_type)
         else:
             low_paths, high_paths = build_bvi_single_frame(root_path, train_scenes)
+            if len(low_paths) == 0:
+                raise ValueError(f'No frames found under {root_path}. Check dataset structure and extensions.')
             train_dataset = MyDataset_Crop(low_paths, high_paths, cropsize=cropsize,
                                            tensor_transform=tensor_transform, flips=flips, test=False, crop_type=crop_type)
     else:
@@ -131,8 +135,12 @@ def run_training(rank, world_size, opt):
 
     init_wandb(rank, opt)
 
-    train_loader, samplers = build_train_loader(opt, rank, world_size)
-    test_loader, _ = create_test_data(rank, world_size, opt['datasets'])
+    try:
+        train_loader, samplers = build_train_loader(opt, rank, world_size)
+        test_loader, _ = create_test_data(rank, world_size, opt['datasets'])
+    except Exception:
+        cleanup()
+        raise
 
     model, _, _ = create_model(opt['network'], rank, use_ddp=world_size > 1)
     optim, scheduler = create_optim_scheduler(opt['train'], model)
