@@ -203,6 +203,8 @@ class TemporalWindowDataset(Dataset):
             low_frames = list(stacked[1:])
 
         if self.cropsize:
+            if isinstance(self.cropsize, int):
+                self.cropsize = (self.cropsize, self.cropsize)
             if self.random_crop:
                 if high_frame.shape[1] <= self.cropsize[0] or high_frame.shape[2] <= self.cropsize[1]:
                     high_frame = self.random_crop.pad(high_frame)
