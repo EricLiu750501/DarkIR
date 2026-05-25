@@ -1,0 +1,66 @@
+datasets:
+  name: BVI_Lowlight
+  train:
+    train_path: ./data/datasets/BVI-Lowlight
+    batch_size: 2
+    n_workers: 4
+    verbose: True
+    temporal_window: 3
+    frame_stride: 1
+    split_seed: 2025
+    train_ratio: 0.8
+    cropsize: 256
+    crop_type: Random
+  val:
+    test_path: ./data/datasets/BVI-Lowlight
+    batch_size_test: 1
+  temporal_window: 3
+  frame_stride: 1
+  split_seed: 2025
+  train_ratio: 0.8
+  split: test
+
+network:
+  name: DarkIR
+  resume_training: False
+  img_channels: 3
+  width: 32
+  middle_blk_num_enc: 2
+  middle_blk_num_dec: 2
+  enc_blk_nums: [1, 2, 3]
+  dec_blk_nums: [3, 1, 1]
+  dilations: [1, 4, 9]
+  extra_depth_wise: True
+  temporal_window: 3
+  temporal_fusion: True
+  temporal_reduction: 8
+
+train:
+  epochs: 100
+  lr_initial: 0.0001
+  weight_decay: 0.0
+  betas: [0.9, 0.999]
+  lr_scheme: CosineAnnealing
+  eta_min: 0.0000001
+
+loss:
+  name: l1
+  weight: 1.0
+
+save:
+  path: ./models/DarkIR_BVI_temporal.pt
+  new: ./models/DarkIR_BVI_temporal_latest.pt
+  best: ./models/DarkIR_BVI_temporal_best.pt
+
+wandb:
+  init: False
+  project: DarkIR
+  entity: ""
+  name: ""
+  save_code: False
+  resume: False
+  id: ""
+  dir: ./wandb
+
+seed: 2025
+world_size: 1
