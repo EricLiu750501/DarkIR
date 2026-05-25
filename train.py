@@ -14,7 +14,8 @@ from archs import create_model, create_optim_scheduler, resume_model, save_check
 from data import create_test_data
 from data.dataset_reader.datapipeline import MyDataset_Crop, TemporalWindowDataset
 from data.dataset_reader.dataset_bvi_lowlight import _split_scenes, _collect_windows
-from losses import L1Loss, MSELoss, CharbonnierLoss, VGGLoss, EdgeLoss, FrequencyLoss, SSIMloss
+from losses import L1Loss, MSELoss, CharbonnierLoss, VGGLoss, EdgeLoss, FrequencyLoss
+from losses.loss import SSIMloss
 from utils.test_utils import setup, cleanup, eval_model, shuffle_sampler
 from utils.utils import init_wandb, logging_dict
 
