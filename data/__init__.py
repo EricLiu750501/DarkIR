@@ -8,6 +8,7 @@ from .dataset_reader.dataset_mef import main_dataset_mef
 from .dataset_reader.dataset_npe import main_dataset_npe
 from .dataset_reader.dataset_vv import main_dataset_vv
 from .dataset_reader.dataset_exdark import main_dataset_exdark
+from .dataset_reader.dataset_bvi_lowlight import main_dataset_bvi_lowlight
 
 def create_test_data(rank, world_size, opt):
     '''
@@ -93,6 +94,23 @@ def create_test_data(rank, world_size, opt):
                                                 verbose=False, 
                                                 num_workers=1, 
                                                 world_size = 1)
+    elif name == 'BVI_Lowlight':
+        temporal_window = opt.get('temporal_window', 3)
+        frame_stride = opt.get('frame_stride', 1)
+        seed = opt.get('split_seed', 2025)
+        train_ratio = opt.get('train_ratio', 0.8)
+        split = opt.get('split', 'test')
+        test_loader, samplers = main_dataset_bvi_lowlight(rank=rank,
+                                                root_path=test_path,
+                                                batch_size_test=batch_size_test,
+                                                verbose=verbose,
+                                                num_workers=num_workers,
+                                                world_size=world_size,
+                                                temporal_window=temporal_window,
+                                                frame_stride=frame_stride,
+                                                seed=seed,
+                                                train_ratio=train_ratio,
+                                                split=split)
 
     else:
         raise NotImplementedError(f'{name} is not implemented')        

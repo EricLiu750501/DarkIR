@@ -104,25 +104,41 @@ def apply_model(model, tensor, resize = False):
     '''
     Apply the inference over each specific frame. If resize = True, resizes before inference.
     '''
-    _, _, H, W = tensor.shape
-    if resize:
-        new_size = [720, 1080]
-        downsample = Resize(new_size)
+    if tensor.dim() == 5:
+        b, t, c, h, w = tensor.shape
+        H, W = h, w
+        if resize:
+            new_size = [720, 1080]
+            downsample = Resize(new_size)
+            tensor = downsample(tensor.view(b * t, c, h, w)).view(b, t, c, *new_size)
+        with torch.no_grad():
+            output = model(tensor, side_loss=False)
+        if resize:
+            upsample = Resize((H, W))
+            output = upsample(output)
+        output = torch.clamp(output, 0., 1.)
+        output = output[:, :, :H, :W]
+        return output
     else:
-        downsample = torch.nn.Identity()
-    tensor = downsample(tensor)
-    tensor = pad_tensor(tensor)
+        _, _, H, W = tensor.shape
+        if resize:
+            new_size = [720, 1080]
+            downsample = Resize(new_size)
+        else:
+            downsample = torch.nn.Identity()
+        tensor = downsample(tensor)
+        tensor = pad_tensor(tensor)
 
-    with torch.no_grad():
-        output = model(tensor, side_loss=False)
-    if resize:
-        upsample = Resize((H, W))
-    else: upsample = torch.nn.Identity()
+        with torch.no_grad():
+            output = model(tensor, side_loss=False)
+        if resize:
+            upsample = Resize((H, W))
+        else: upsample = torch.nn.Identity()
 
-    output = upsample(output)
-    output = torch.clamp(output, 0., 1.)
-    output = output[:,:, :H, :W]
-    return output
+        output = upsample(output)
+        output = torch.clamp(output, 0., 1.)
+        output = output[:,:, :H, :W]
+        return output
 
 def inference_video(rank, world_size):
     '''
@@ -159,6 +175,8 @@ def inference_video(rank, world_size):
     if rank==0:
         pbar = tqdm(total = int(cap.get(cv.CAP_PROP_FRAME_COUNT)))
 
+    frame_buffer = []
+    temporal_window = opt.get('temporal_window', 1)
     while cap.isOpened():
         ret, frame = cap.read()
         old_frame = np.copy(frame)
@@ -167,7 +185,17 @@ def inference_video(rank, world_size):
         tensor = array_to_tensor(frame)
         tensor = normalize_tensor(tensor)
 
-        output = apply_model(model, tensor, resize = resize)
+        if temporal_window > 1:
+            frame_buffer.append(tensor)
+            if len(frame_buffer) < temporal_window:
+                pad_count = temporal_window - len(frame_buffer)
+                window = frame_buffer + [frame_buffer[-1]] * pad_count
+            else:
+                window = frame_buffer[-temporal_window:]
+            window_tensor = torch.stack(window, dim=1)
+            output = apply_model(model, window_tensor, resize=resize)
+        else:
+            output = apply_model(model, tensor, resize = resize)
 
         frame = tensor_to_array(output)
         combined = np.hstack((old_frame, frame))

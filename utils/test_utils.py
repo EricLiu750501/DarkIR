@@ -48,7 +48,7 @@ def eval_one_loader(model, test_loader, metrics, rank=0, world_size = 1, eta = F
         for high_batch_valid, low_batch_valid in test_loader:
 
             high_batch_valid = high_batch_valid.to(rank)
-            low_batch_valid = low_batch_valid.to(rank)         
+            low_batch_valid = low_batch_valid.to(rank)
 
             enhanced_batch_valid = model(low_batch_valid)
             # loss

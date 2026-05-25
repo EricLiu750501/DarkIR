@@ -5,13 +5,17 @@ from ptflops import get_model_complexity_info
 
 from .DarkIR import DarkIR   
 
-def create_model(opt, rank, adapter = False):
+def create_model(opt, rank, adapter = False, use_ddp = True):
     '''
     Creates the model.
     opt: a dictionary from the yaml config key network
     '''
     name = opt['name']
 
+
+    temporal_window = opt.get('temporal_window', 1)
+    temporal_fusion = opt.get('temporal_fusion', False)
+    temporal_reduction = opt.get('temporal_reduction', 8)
 
     model = DarkIR(img_channel=opt['img_channels'], 
                     width=opt['width'], 
@@ -20,7 +24,10 @@ def create_model(opt, rank, adapter = False):
                     enc_blk_nums=opt['enc_blk_nums'],
                     dec_blk_nums=opt['dec_blk_nums'], 
                     dilations=opt['dilations'],
-                    extra_depth_wise=opt['extra_depth_wise'])
+                    extra_depth_wise=opt['extra_depth_wise'],
+                    temporal_window=temporal_window,
+                    temporal_fusion=temporal_fusion,
+                    temporal_reduction=temporal_reduction)
 
     if rank ==0:
         print(f'Using {name} network')
@@ -33,8 +40,9 @@ def create_model(opt, rank, adapter = False):
         macs, params = None, None
 
     model.to(rank)
-    
-    model = DDP(model, device_ids=[rank], find_unused_parameters=adapter)
+
+    if use_ddp:
+        model = DDP(model, device_ids=[rank], find_unused_parameters=adapter)
     
     return model, macs, params
 

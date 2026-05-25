@@ -158,6 +158,65 @@ class MyDataset_Crop(Dataset):
     
         return rgb_high, rgb_low
 
+
+class TemporalWindowDataset(Dataset):
+    """
+    Dataset for temporal windows. Returns (high_center, low_window).
+    low_window: [T, C, H, W]
+    high_center: [C, H, W]
+    """
+
+    def __init__(self, windows_low, centers_high, cropsize=None, tensor_transform=None, flips=None, test=False, crop_type='Random'):
+        self.windows_low = windows_low
+        self.centers_high = centers_high
+        self.test = test
+        self.cropsize = cropsize
+        self.to_tensor = tensor_transform
+        self.flips = flips
+
+        if self.cropsize:
+            if crop_type == 'Random':
+                self.random_crop = RandomCropSame(self.cropsize)
+                self.center_crop = None
+            elif crop_type == 'Center':
+                self.center_crop = transforms.CenterCrop(cropsize)
+                self.random_crop = None
+
+    def __len__(self):
+        return len(self.windows_low)
+
+    def __getitem__(self, idx):
+        window_low_paths = self.windows_low[idx]
+        center_high_path = self.centers_high[idx]
+
+        low_frames = [Image.open(path).convert('RGB') for path in window_low_paths]
+        high_frame = Image.open(center_high_path).convert('RGB')
+
+        if self.to_tensor:
+            low_frames = [self.to_tensor(frame) for frame in low_frames]
+            high_frame = self.to_tensor(high_frame)
+
+        if self.flips:
+            stacked = torch.stack([high_frame] + low_frames)
+            stacked = self.flips(stacked)
+            high_frame = stacked[0]
+            low_frames = list(stacked[1:])
+
+        if self.cropsize:
+            if self.random_crop:
+                if high_frame.shape[1] <= self.cropsize[0] or high_frame.shape[2] <= self.cropsize[1]:
+                    high_frame = self.random_crop.pad(high_frame)
+                    low_frames = [self.random_crop.pad(frame) for frame in low_frames]
+                i, j, th, tw = self.random_crop.get_params(high_frame, self.cropsize)
+                high_frame = TF.crop(high_frame, i, j, th, tw)
+                low_frames = [TF.crop(frame, i, j, th, tw) for frame in low_frames]
+            elif self.center_crop:
+                high_frame = self.center_crop(high_frame)
+                low_frames = [self.center_crop(frame) for frame in low_frames]
+
+        low_window = torch.stack(low_frames, dim=0)
+        return high_frame, low_window
+
 if __name__== '__main__':
     tensor = torch.rand([1, 3, 1000, 1000])
     

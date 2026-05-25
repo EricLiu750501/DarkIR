@@ -8,6 +8,30 @@ except:
     from archs.arch_model import EBlock, DBlock
     from .arch_util import CustomSequential
 
+class TemporalAttentionFusion(nn.Module):
+
+    def __init__(self, channels, reduction=8, init_alpha=0.1):
+        super().__init__()
+        hidden = max(channels // reduction, 4)
+        self.pool = nn.AdaptiveAvgPool2d(1)
+        self.mlp = nn.Sequential(
+            nn.Linear(channels, hidden),
+            nn.ReLU(inplace=True),
+            nn.Linear(hidden, 1)
+        )
+        self.alpha = nn.Parameter(torch.tensor(init_alpha))
+
+    def forward(self, x):
+        # x: [B, T, C, H, W]
+        b, t, c, h, w = x.shape
+        pooled = self.pool(x.view(b * t, c, h, w)).view(b, t, c)
+        logits = self.mlp(pooled)
+        weights = torch.softmax(logits, dim=1).view(b, t, 1, 1, 1)
+        fused = (x * weights).sum(dim=1)
+        center = x[:, t // 2]
+        return center + self.alpha * (fused - center)
+
+
 class DarkIR(nn.Module):
     
     def __init__(self, img_channel=3, 
@@ -17,13 +41,21 @@ class DarkIR(nn.Module):
                  enc_blk_nums=[1, 2, 3], 
                  dec_blk_nums=[3, 1, 1],  
                  dilations = [1, 4, 9], 
-                 extra_depth_wise = True):
+                 extra_depth_wise = True,
+                 temporal_window = 1,
+                 temporal_fusion = False,
+                 temporal_reduction = 8):
         super(DarkIR, self).__init__()
         
         self.intro = nn.Conv2d(in_channels=img_channel, out_channels=width, kernel_size=3, padding=1, stride=1, groups=1,
                                 bias=True)
         self.ending = nn.Conv2d(in_channels=width, out_channels=img_channel, kernel_size=3, padding=1, stride=1, groups=1,
                               bias=True)
+
+        self.temporal_window = temporal_window
+        self.temporal_fusion = temporal_fusion and temporal_window > 1
+        if self.temporal_fusion:
+            self.temporal_fusion_layer = TemporalAttentionFusion(width, reduction=temporal_reduction)
 
         self.encoders = nn.ModuleList()
         self.decoders = nn.ModuleList()
@@ -73,10 +105,25 @@ class DarkIR(nn.Module):
         
     def forward(self, input, side_loss = False, use_adapter = None):
 
-        _, _, H, W = input.shape
-
-        input = self.check_image_size(input)
-        x = self.intro(input)
+        if input.dim() == 5:
+            b, t, c, h, w = input.shape
+            center_index = t // 2
+            H, W = h, w
+            input_4d = input.view(b * t, c, h, w)
+            input_4d = self.check_image_size(input_4d)
+            _, _, pad_h, pad_w = input_4d.shape
+            input_5d = input_4d.view(b, t, c, pad_h, pad_w)
+            x = self.intro(input_4d).view(b, t, -1, pad_h, pad_w)
+            if self.temporal_fusion:
+                x = self.temporal_fusion_layer(x)
+            else:
+                x = x[:, center_index]
+            input_base = input_5d[:, center_index]
+        else:
+            _, _, H, W = input.shape
+            input = self.check_image_size(input)
+            x = self.intro(input)
+            input_base = input
         
         skips = []
         for encoder, down in zip(self.encoders, self.downs):
@@ -99,7 +146,7 @@ class DarkIR(nn.Module):
             x = decoder(x)
 
         x = self.ending(x)
-        x = x + input
+        x = x + input_base
         out = x[:, :, :H, :W] # we recover the original size of the image
         if side_loss:
             return out_side, out
