@@ -39,8 +39,8 @@ def build_bvi_single_frame(root_path, scenes):
             high_dir = os.path.join(scene_path, high_folder)
             if not os.path.isdir(low_dir) or not os.path.isdir(high_dir):
                 continue
-            low_frames = sorted([f for f in os.listdir(low_dir) if f.lower().endswith('.png')])
-            high_frames = sorted([f for f in os.listdir(high_dir) if f.lower().endswith('.png')])
+            low_frames = sorted([f for f in os.listdir(low_dir) if f.lower().endswith(('.png', '.jpg', '.jpeg'))])
+            high_frames = sorted([f for f in os.listdir(high_dir) if f.lower().endswith(('.png', '.jpg', '.jpeg'))])
             frame_set = sorted(list(set(low_frames) & set(high_frames)))
             low_paths.extend([os.path.join(low_dir, f) for f in frame_set])
             high_paths.extend([os.path.join(high_dir, f) for f in frame_set])
@@ -129,9 +129,42 @@ def train_one_epoch(model, train_loader, criterion, optim, rank):
     return total_loss / max(len(train_loader), 1)
 
 
+def print_model_summary(opt):
+    try:
+        from torchinfo import summary
+    except ImportError:
+        if opt.get('rank', 0) == 0:
+            print('torchinfo not installed; skipping model summary')
+        return
+
+    net_opt = opt['network']
+    temporal_window = net_opt.get('temporal_window', 1)
+    crop = opt['datasets']['train'].get('cropsize', 256)
+    if isinstance(crop, int):
+        crop = (crop, crop)
+    input_size = (1, temporal_window, 3, crop[0], crop[1]) if temporal_window > 1 else (1, 3, crop[0], crop[1])
+
+    from archs.DarkIR import DarkIR
+    model = DarkIR(img_channel=net_opt['img_channels'],
+                   width=net_opt['width'],
+                   middle_blk_num_enc=net_opt['middle_blk_num_enc'],
+                   middle_blk_num_dec=net_opt['middle_blk_num_dec'],
+                   enc_blk_nums=net_opt['enc_blk_nums'],
+                   dec_blk_nums=net_opt['dec_blk_nums'],
+                   dilations=net_opt['dilations'],
+                   extra_depth_wise=net_opt['extra_depth_wise'],
+                   temporal_window=temporal_window,
+                   temporal_fusion=net_opt.get('temporal_fusion', False),
+                   temporal_reduction=net_opt.get('temporal_reduction', 8))
+
+    print(summary(model, input_size=input_size, device='cpu', verbose=0))
+
+
 def run_training(rank, world_size, opt):
     setup(rank, world_size=world_size)
     set_seed(opt.get('seed', 2025))
+
+    opt['rank'] = rank
 
     init_wandb(rank, opt)
 
@@ -143,6 +176,8 @@ def run_training(rank, world_size, opt):
         raise
 
     model, _, _ = create_model(opt['network'], rank, use_ddp=world_size > 1)
+    if rank == 0:
+        print_model_summary(opt)
     optim, scheduler = create_optim_scheduler(opt['train'], model)
     model, optim, scheduler, start_epoch = resume_model(model, optim, scheduler, opt['save']['path'], rank, opt['network'].get('resume_training', False))
 
